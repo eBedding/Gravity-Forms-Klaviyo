@@ -2,7 +2,8 @@
 
 GFForms::include_feed_addon_framework();
 
-class GFKlaviyoAPI extends GFFeedAddOn {
+class GFKlaviyoAPI extends GFFeedAddOn
+{
 
 	protected $_version = GF_KLAVIYO_API_VERSION;
 	protected $_min_gravityforms_version = '1.9.16';
@@ -19,8 +20,9 @@ class GFKlaviyoAPI extends GFFeedAddOn {
 	 *
 	 * @return GFKlaviyoAPI
 	 */
-	public static function get_instance() {
-		if ( self::$_instance == null ) {
+	public static function get_instance()
+	{
+		if (self::$_instance == null) {
 			self::$_instance = new GFKlaviyoAPI();
 		}
 
@@ -30,16 +32,16 @@ class GFKlaviyoAPI extends GFFeedAddOn {
 	/**
 	 * Plugin starting point. Handles hooks, loading of language files and PayPal delayed payment support.
 	 */
-	public function init() {
+	public function init()
+	{
 
 		parent::init();
 
-		$this->add_delayed_payment_support (
+		$this->add_delayed_payment_support(
 			array(
-				'option_label' => esc_html__( 'Subscribe contact to service x only when payment is received.', 'klaviyoaddon' )
+				'option_label' => esc_html__('Subscribe contact to service x only when payment is received.', 'klaviyoaddon')
 			)
 		);
-
 	}
 
 
@@ -54,48 +56,68 @@ class GFKlaviyoAPI extends GFFeedAddOn {
 	 *
 	 * @return bool|void
 	 */
-	public function process_feed( $feed, $entry, $form ) {
+	public function process_feed($feed, $entry, $form)
+	{
 		$feedName  = $feed['meta']['feedName'];
 		$list_id = $feed['meta']['list'];
 
 		// Retrieve the name => value pairs for all fields mapped in the 'mappedFields' field map.
-		$field_map = $this->get_field_map_fields( $feed, 'mappedFields' );
+		$field_map = $this->get_field_map_fields($feed, 'mappedFields');
 
 		// Loop through the fields from the field map setting building an array of values to be passed to the third-party service.
 		$merge_vars = array();
-		foreach ( $field_map as $name => $field_id ) {
+		foreach ($field_map as $name => $field_id) {
 
 			// Get the field value for the specified field id
-			$merge_vars[ $name ] = $this->get_field_value( $form, $entry, $field_id );
-
+			$merge_vars[$name] = $this->get_field_value($form, $entry, $field_id);
 		}
 
 		// Send the values to the third-party service.
-        if ($this->get_plugin_setting('api_key')) {
-            $tracker = new Klaviyo($this->get_plugin_setting('api_key'));
-            $tracker->track (
-                'Active on Site',
-                array('$email' => $merge_vars['email'], '$first_name' => $merge_vars['first_name'], '$last_name' => $merge_vars['last_name'])
-            // array('Item SKU' => 'ABC123', 'Payment Method' => 'Credit Card'),
-            // 1354913220
-            );
-        }
+		if ($this->get_plugin_setting('api_key')) {
+			$tracker = new Klaviyo($this->get_plugin_setting('api_key'));
+			$tracker->track(
+				'Active on Site',
+				array('$email' => $merge_vars['email'], '$first_name' => $merge_vars['first_name'], '$last_name' => $merge_vars['last_name'])
+				// array('Item SKU' => 'ABC123', 'Payment Method' => 'Credit Card'),
+				// 1354913220
+			);
+		}
 
-        if ($this->get_plugin_setting('private_api_key')) {
-        	$url = 'https://a.klaviyo.com/api/v1/list/' .$list_id. '/members';
+		if ($this->get_plugin_setting('private_api_key')) {
+			$url = 'https://a.klaviyo.com/api/v2/list/' . $list_id . '/subscribe';
 
-        	wp_remote_post($url,array(
-        		'body' => array(
-        			'api_key' => $this->get_plugin_setting('private_api_key'),
-        			'email' => $merge_vars['email'],
-        			'properties' => json_encode(array(
-        				'$first_name' => $merge_vars['first_name'],
-        				'$last_name' => $merge_vars['last_name']
-        			)),
-        			'confirm_optin' => 'false'
-        		)
-        	));
-        }
+			// Add data to array.
+			$post_data = array(
+				'api_key' => $this->get_plugin_setting('private_api_key'),
+				'profiles' => array(array(
+					'email' => $merge_vars['email'],
+					'$consent' => 'email',
+					'$source' => 'GravityForms: ' . $form['title']
+				))
+			);
+
+			if (isset($merge_vars['first_name']))
+				$post_data['profiles'][0]['$first_name'] = $merge_vars['first_name'];
+
+			if (isset($merge_vars['last_name']))
+				$post_data['profiles'][0]['$last_name'] = $merge_vars['last_name'];
+
+			$response = wp_safe_remote_post($url, array(
+				'method' => 'POST',
+				'headers' => array('content-type' => 'application/json'),
+				'body' => json_encode($post_data)
+			));
+
+			//If the Klaviyo API returns a code anything other than OK, log it!
+			if (is_wp_error($response)) {
+				$this->log_error(__METHOD__ . '(): Could not add user to mailing list. ' . $response->get_error_message());
+			} else {
+				if ($response['response']['code'] != 200) {
+					$this->log_error(__METHOD__ . '(): Could not add user to mailing list');
+					$this->log_error(__METHOD__ . '(): response => ' . print_r($response, true));
+				}
+			}
+		}
 	}
 
 	/**
@@ -107,14 +129,15 @@ class GFKlaviyoAPI extends GFFeedAddOn {
 	 *
 	 * @return string
 	 */
-	public function get_phone_field_value( $entry, $field_id, $field ) {
+	public function get_phone_field_value($entry, $field_id, $field)
+	{
 
 		// Get the field value from the Entry Object.
-		$field_value = rgar( $entry, $field_id );
+		$field_value = rgar($entry, $field_id);
 
 		// If there is a value and the field phoneFormat setting is set to standard reformat the value.
-		if ( ! empty( $field_value ) && $field->phoneFormat == 'standard' && preg_match( '/^\D?(\d{3})\D?\D?(\d{3})\D?(\d{4})$/', $field_value, $matches ) ) {
-			$field_value = sprintf( '%s-%s-%s', $matches[1], $matches[2], $matches[3] );
+		if (!empty($field_value) && $field->phoneFormat == 'standard' && preg_match('/^\D?(\d{3})\D?\D?(\d{3})\D?(\d{4})$/', $field_value, $matches)) {
+			$field_value = sprintf('%s-%s-%s', $matches[1], $matches[2], $matches[3]);
 		}
 
 		return $field_value;
@@ -128,82 +151,82 @@ class GFKlaviyoAPI extends GFFeedAddOn {
 	 *
 	 * @return array
 	 */
-	 public function plugin_settings_fields() {
-	 	return array(
-	 		array(
-	 			'title'  => esc_html__( 'Insert your Klaviyo API keys below to connect. You can find them on your Klaviyo account page.', 'klaviyoaddon' ),
-	 			'fields' => array(
-	 				array(
-	 					'name'    => 'api_key',
-	 					'label'   => esc_html__( 'Public API Key', 'klaviyoaddon' ),
-	 					'type'    => 'text',
-	 					'class'   => 'small',
-	 				),
-	 				array(
-	 					'name'    => 'private_api_key',
-	 					'label'   => esc_html__( 'Private API Key', 'klaviyoaddon' ),
-	 					'type'    => 'text',
-	 					'class'   => 'medium',
-	 				),
-	 			),
-	 		),
-	 	);
-	 }
+	public function plugin_settings_fields()
+	{
+		return array(
+			array(
+				'title'  => esc_html__('Insert your Klaviyo API keys below to connect. You can find them on your Klaviyo account page.', 'klaviyoaddon'),
+				'fields' => array(
+					array(
+						'name'    => 'api_key',
+						'label'   => esc_html__('Public API Key', 'klaviyoaddon'),
+						'type'    => 'text',
+						'class'   => 'small',
+					),
+					array(
+						'name'    => 'private_api_key',
+						'label'   => esc_html__('Private API Key', 'klaviyoaddon'),
+						'type'    => 'text',
+						'class'   => 'medium',
+					),
+				),
+			),
+		);
+	}
 
 	/**
 	 * Configures the settings which should be rendered on the feed edit page in the Form Settings > Klaviyo area.
 	 *
 	 * @return array
 	 */
-	public function feed_settings_fields() {
+	public function feed_settings_fields()
+	{
 		return array(
 			array(
-				'title'  => esc_html__( 'Klaviyo Feed Settings', 'klaviyoaddon' ),
+				'title'  => esc_html__('Klaviyo Feed Settings', 'klaviyoaddon'),
 				'fields' => array(
 					array(
-						'label'   => esc_html__( 'Feed name', 'klaviyoaddon' ),
+						'label'   => esc_html__('Feed name', 'klaviyoaddon'),
 						'type'    => 'text',
 						'name'    => 'feedName',
 						'class'   => 'small',
-						'tooltip'  => '<h6>' . esc_html__( 'Name', 'klaviyoaddon' ) . '</h6>' . esc_html__( 'Enter a feed name to uniquely identify this setup.', 'klaviyoaddon' )
+						'tooltip'  => '<h6>' . esc_html__('Name', 'klaviyoaddon') . '</h6>' . esc_html__('Enter a feed name to uniquely identify this setup.', 'klaviyoaddon')
 					),
-					 array(
-					 	'name'     => 'list',
-					 	'label'    => esc_html__('Klaviyo List', 'klaviyoaddon' ),
-					 	'type'     => 'select',
-					 	'required' => true,
-					 	'choices'  => $this->lists_for_feed_setting(),
-					 	'tooltip'  => '<h6>' . esc_html__( 'Klaviyo List', 'klaviyoaddon' ) . '</h6>' . esc_html__( 'Select which Klaviyo list this feed will add contacts to.', 'klaviyoaddon' )
-				 	),
+					array(
+						'name'     => 'list',
+						'label'    => esc_html__('Klaviyo List', 'klaviyoaddon'),
+						'type'     => 'select',
+						'required' => true,
+						'choices'  => $this->lists_for_feed_setting(),
+						'tooltip'  => '<h6>' . esc_html__('Klaviyo List', 'klaviyoaddon') . '</h6>' . esc_html__('Select which Klaviyo list this feed will add contacts to.', 'klaviyoaddon')
+					),
 					array(
 						'name'      => 'mappedFields',
-						'label'     => esc_html__( 'Map Fields', 'klaviyoaddon' ),
+						'label'     => esc_html__('Map Fields', 'klaviyoaddon'),
 						'type'      => 'field_map',
 						'field_map' => array(
 							array(
 								'name'       => 'email',
-								'label'      => esc_html__( 'Email', 'klaviyoaddon' ),
+								'label'      => esc_html__('Email', 'klaviyoaddon'),
 								'required'   => true,
-								'field_type' => array( 'email', 'hidden' ),
+								'field_type' => array('email', 'hidden'),
 							),
 							array(
-                                'name'     => 'first_name',
-                                'label'    => esc_html__( 'First Name', 'klaviyoaddon' ),
-                                'required' => true
-                            ),
-                            array(
-                                'name'     => 'last_name',
-                                'label'    => esc_html__( 'Last Name', 'klaviyoaddon' ),
-                                'required' => true
-                            ),
+								'name'     => 'first_name',
+								'label'    => esc_html__('First Name', 'klaviyoaddon')
+							),
+							array(
+								'name'     => 'last_name',
+								'label'    => esc_html__('Last Name', 'klaviyoaddon')
+							),
 						),
 					),
 					array(
 						'name'           => 'condition',
-						'label'          => esc_html__( 'Condition', 'klaviyoaddon' ),
+						'label'          => esc_html__('Condition', 'klaviyoaddon'),
 						'type'           => 'feed_condition',
-						'checkbox_label' => esc_html__( 'Enable Condition', 'klaviyoaddon' ),
-						'instructions'   => esc_html__( 'Process this feed if', 'klaviyoaddon' ),
+						'checkbox_label' => esc_html__('Enable Condition', 'klaviyoaddon'),
+						'instructions'   => esc_html__('Process this feed if', 'klaviyoaddon'),
 					),
 				),
 			),
@@ -215,10 +238,11 @@ class GFKlaviyoAPI extends GFFeedAddOn {
 	 *
 	 * @return array
 	 */
-	public function feed_list_columns() {
+	public function feed_list_columns()
+	{
 		return array(
-			'feedName'  => esc_html__( 'Name', 'klaviyoaddon' ),
-			 'list' => esc_html__( 'Klaviyo List', 'klaviyoaddon' ),
+			'feedName'  => esc_html__('Name', 'klaviyoaddon'),
+			'list' => esc_html__('Klaviyo List', 'klaviyoaddon'),
 		);
 	}
 
@@ -229,8 +253,9 @@ class GFKlaviyoAPI extends GFFeedAddOn {
 	 *
 	 * @return string
 	 */
-	public function get_column_value_mytextbox( $feed ) {
-		return '<b>' . rgars( $feed, 'meta/mytextbox' ) . '</b>';
+	public function get_column_value_mytextbox($feed)
+	{
+		return '<b>' . rgars($feed, 'meta/mytextbox') . '</b>';
 	}
 
 	/**
@@ -238,53 +263,51 @@ class GFKlaviyoAPI extends GFFeedAddOn {
 	 *
 	 * @return bool
 	 */
-	public function can_create_feed() {
+	public function can_create_feed()
+	{
 
 		// Get the plugin settings.
 		$settings = $this->get_plugin_settings();
 
 		// Access a specific setting e.g. an api key
-		$key = rgar( $settings, 'apiKey' );
+		$key = rgar($settings, 'apiKey');
 
 		return true;
 	}
 
-	public function lists_for_feed_setting() {
-        $lists = array(
-            array(
-                'label' => '',
-                'value' => ''
-            )
-        );
+	public function lists_for_feed_setting()
+	{
+		$lists = array(
+			array(
+				'label' => '',
+				'value' => ''
+			)
+		);
 
-        /* If Klaviyo API credentials are invalid, return the lists array. */
-        //        if ( ! $this->initialize_api() ) {
-        //            return $lists;
-        //        }
+		/* If Klaviyo API credentials are invalid, return the lists array. */
+		//        if ( ! $this->initialize_api() ) {
+		//            return $lists;
+		//        }
 
-        $private_key = $this->get_plugin_setting('private_api_key');
+		$private_key = $this->get_plugin_setting('private_api_key');
 
-        if ($private_key) {
-			$url = 'https://a.klaviyo.com/api/v1/lists?api_key=' . $private_key;
-	       	$response = wp_remote_get($url);
+		if ($private_key) {
+			$url = 'https://a.klaviyo.com/api/v2/lists?api_key=' . $private_key;
+			$response = wp_remote_get($url);
 
-	       	$data = json_decode($response['body']);
+			$data = json_decode($response['body']);
 
-            /* Get available Klaviyo lists. */
-	        $ac_lists = $data->data;
+			/* Add Klaviyo lists to array and return it. */
+			$lists = array();
 
-	        /* Add Klaviyo lists to array and return it. */
-	        $lists = array();
-            foreach ( $ac_lists as $list ) {
-                if ($list->list_type == 'list') {
-                    $lists[] = array(
-                        'label' => $list->name,
-                        'value' => $list->id
-                    );
-                }
-            }
-        }
+			foreach ($data as $list) {
+				$lists[] = array(
+					'label' => $list->list_name,
+					'value' => $list->list_id
+				);
+			}
+		}
 
-       return $lists;
-    }
+		return $lists;
+	}
 }

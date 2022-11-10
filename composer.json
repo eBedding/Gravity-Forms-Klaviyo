@@ -1,21 +1,4 @@
 {
   "name":  "ebedding/gravity-forms-klaviyo",
-  "repositories": [
-    {
-      "type": "package",
-      "package": {
-        "name": "ebedding/gravity-forms-klaviyo",
-        "version": "1.0.0",
-        "type": "wordpress-plugin",
-        "source": {
-          "url": "https://github.com/eBedding/Gravity-Forms-Klaviyo.git",
-          "type": "git",
-          "reference": "master"
-        }
-      }
-    }
-  ],
-  "require": {
-    "ebedding/gravity-forms-klaviyo": "^1"
-  }
+  "type": "wordpress-plugin",
 }
